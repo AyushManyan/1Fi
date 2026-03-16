@@ -2,9 +2,9 @@ const { Pool } = require('pg');
 
 // Database configuration
 const pool = new Pool({
-  user: 'admin',
-  password: 'admin123',
-  host: 'db',
+  user: 'postgres',
+  password: 'Ayush@2003',
+  host: 'localhost',
   port: 5432,
   database: 'orderdb',
 });
