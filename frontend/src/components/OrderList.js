@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { fetchOrders, updateOrderStatus } from '../api';
 
+import { cancelOrder } from '../api';
+
 function OrderList() {
   const [orders, setOrders] = useState([]);
   const [sortField, setSortField] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
+
+  const [cancelLoading, setCancelLoading] = useState(null); // order id being cancelled
+  const [error, setError] = useState(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState(null);
 
 
   useEffect(() => {
@@ -15,6 +22,35 @@ function OrderList() {
     await updateOrderStatus(orderId, newStatus);
     const data = await fetchOrders();
     setOrders(data);
+  };
+
+  // Show modal to confirm cancel
+  const openCancelModal = (orderId) => {
+    setOrderToCancel(orderId);
+    setShowCancelModal(true);
+    setError(null);
+  };
+
+  // Handle actual cancel after confirmation
+  const handleCancelConfirmed = async () => {
+    if (!orderToCancel) return;
+    setCancelLoading(orderToCancel);
+    setShowCancelModal(false);
+    try {
+      const result = await cancelOrder(orderToCancel);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        // Refresh orders
+        const data = await fetchOrders();
+        setOrders(data);
+      }
+    } catch (err) {
+      setError('Failed to cancel order. Please try again.');
+    } finally {
+      setCancelLoading(null);
+      setOrderToCancel(null);
+    }
   };
 
   const sortedOrders = [...orders].sort((a, b) => {
@@ -42,6 +78,7 @@ function OrderList() {
   return (
     <div className="order-list">
       <h2>Orders ({orders.length})</h2>
+      {error && <div style={{ color: 'red', marginBottom: 10 }}>{error}</div>}
       <table className="order-table">
         <thead>
           <tr>
@@ -52,36 +89,81 @@ function OrderList() {
             <th onClick={() => handleSort('total_amount')} style={{ cursor: 'pointer' }}>Total</th>
             <th>Status</th>
             <th onClick={() => handleSort('created_at')} style={{ cursor: 'pointer' }}>Date</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {/**/}
-          {sortedOrders.map((order, index) => (
-            <tr key={index}>
-              <td>#{order.id}</td>
-              <td>
-                <div>{order.customer_name}</div>
-                <small style={{ color: '#999' }}>{order.customer_email}</small>
-              </td>
-              <td>{order.product_name}</td>
-              <td>{order.quantity}</td>
-              <td>₹{parseFloat(order.total_amount).toLocaleString()}</td>
-              <td>
-                <select
-                  className="status-select"
-                  value={order.status}
-                  onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                >
-                  {statusOptions.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </td>
-              <td>{new Date(order.created_at).toLocaleDateString()}</td>
-            </tr>
-          ))}
+          {sortedOrders.map((order, index) => {
+            const isCancelled = order.status === 'cancelled';
+            return (
+              <tr key={index} className={isCancelled ? 'order-cancelled-row' : undefined}>
+                <td>#{order.id}</td>
+                <td>
+                  <div>{order.customer_name}</div>
+                  <small style={{ color: '#999' }}>{order.customer_email}</small>
+                </td>
+                <td>{order.product_name}</td>
+                <td>{order.quantity}</td>
+                <td>₹{parseFloat(order.total_amount).toLocaleString()}</td>
+                <td>
+                  <select
+                    className="status-select"
+                    value={order.status}
+                    onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                    disabled={isCancelled}
+                  >
+                    {statusOptions.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>{new Date(order.created_at).toLocaleDateString()}</td>
+                <td>
+                  {(order.status === 'pending' || order.status === 'confirmed') && !isCancelled && (
+                    <button
+                      onClick={() => openCancelModal(order.id)}
+                      disabled={cancelLoading === order.id}
+                      style={{
+                        background: '#e94560', color: 'white', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer',
+                        opacity: cancelLoading === order.id ? 0.6 : 1
+                      }}
+                    >
+                      {cancelLoading === order.id ? 'Cancelling...' : 'Cancel'}
+                    </button>
+                  )}
+                  {(order.status === 'shipped' || order.status === 'delivered' || isCancelled) && (
+                    <span style={{ color: '#aaa', fontSize: 12 }}>—</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      {/* Cancel Confirmation Modal */}
+      {showCancelModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Cancel Order</h3>
+            <p>Are you sure you want to cancel this order?</p>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button
+                onClick={handleCancelConfirmed}
+                style={{ background: '#e94560', color: 'white', border: 'none', borderRadius: 4, padding: '6px 18px', fontWeight: 500, cursor: 'pointer' }}
+              >
+                Yes, Cancel
+              </button>
+              <button
+                onClick={() => setShowCancelModal(false)}
+                style={{ background: '#eee', color: '#333', border: 'none', borderRadius: 4, padding: '6px 18px', fontWeight: 500, cursor: 'pointer' }}
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

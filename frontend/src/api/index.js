@@ -38,6 +38,15 @@ export async function searchCustomers(name) {
   return res.json();
 }
 
+// Cancel order API
+export async function cancelOrder(id) {
+  const res = await fetch(`${API_BASE}/orders/${id}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.json();
+}
+
 export async function createCustomer(data) {
   const res = await fetch(`${API_BASE}/customers`, {
     method: 'POST',
