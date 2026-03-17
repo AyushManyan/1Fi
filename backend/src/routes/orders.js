@@ -63,7 +63,7 @@ router.post('/', async (req, res) => {
       'SELECT * FROM products WHERE id = $1 FOR UPDATE',
       [product_id]
     );
-    
+
     if (productResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Product not found' });
@@ -119,22 +119,41 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
-module.exports = router;
 
-// Cancel order
 router.post('/:id/cancel', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const orderId = req.params.id;
-    // Optionally, check if order exists and is not already cancelled
-    const result = await pool.query(
-      'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND status != $1 RETURNING *',
-      ['cancelled', orderId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found or already cancelled' });
+    await client.query('BEGIN');
+    // Fetch order
+    const orderResult = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (orderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found' });
     }
-    res.json(result.rows[0]);
+    const order = orderResult.rows[0];
+    if (!(order.status === 'pending' || order.status === 'confirmed')) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Order cannot be cancelled. Only pending or confirmed orders can be cancelled.' });
+    }
+    // Restore inventory
+    await client.query(
+      'UPDATE products SET inventory_count = inventory_count + $1 WHERE id = $2',
+      [order.quantity, order.product_id]
+    );
+    // Update order status
+    const updateResult = await client.query(
+      "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1 RETURNING *",
+      [req.params.id]
+    );
+    await client.query('COMMIT');
+    res.json(updateResult.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to cancel order' });
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Failed to cancel order', details: err.message });
+  } finally {
+    client.release();
   }
 });
+
+
+module.exports = router;
