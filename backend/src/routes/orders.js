@@ -120,3 +120,21 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 module.exports = router;
+
+// Cancel order
+router.post('/:id/cancel', async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    // Optionally, check if order exists and is not already cancelled
+    const result = await pool.query(
+      'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND status != $1 RETURNING *',
+      ['cancelled', orderId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found or already cancelled' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to cancel order' });
+  }
+});
