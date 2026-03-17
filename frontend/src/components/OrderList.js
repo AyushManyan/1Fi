@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { fetchOrders, updateOrderStatus } from '../api';
-
-import { cancelOrder } from '../api';
+import { fetchOrders, updateOrderStatus, cancelOrder } from '../api';
+import Loader from './Loader';
 
 function OrderList() {
   const [orders, setOrders] = useState([]);
@@ -12,16 +11,28 @@ function OrderList() {
   const [error, setError] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [statusLoading, setStatusLoading] = useState(null); // order id being updated
 
 
   useEffect(() => {
-    fetchOrders().then(data => setOrders(data));
+    setLoading(true);
+    fetchOrders().then(data => {
+      if (Array.isArray(data)) {
+        setOrders(data);
+      } else {
+        setOrders([]); // or handle error
+      }
+      setLoading(false);
+    });
   }, []);
 
   const handleStatusChange = async (orderId, newStatus) => {
+    setStatusLoading(orderId);
     await updateOrderStatus(orderId, newStatus);
     const data = await fetchOrders();
     setOrders(data);
+    setStatusLoading(null);
   };
 
   // Show modal to confirm cancel
@@ -79,68 +90,77 @@ function OrderList() {
     <div className="order-list">
       <h2>Orders ({orders.length})</h2>
       {error && <div style={{ color: 'red', marginBottom: 10 }}>{error}</div>}
-      <table className="order-table">
-        <thead>
-          <tr>
-            <th onClick={() => handleSort('id')} style={{ cursor: 'pointer' }}>ID</th>
-            <th>Customer</th>
-            <th>Product</th>
-            <th onClick={() => handleSort('quantity')} style={{ cursor: 'pointer' }}>Qty</th>
-            <th onClick={() => handleSort('total_amount')} style={{ cursor: 'pointer' }}>Total</th>
-            <th>Status</th>
-            <th onClick={() => handleSort('created_at')} style={{ cursor: 'pointer' }}>Date</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {/**/}
-          {sortedOrders.map((order, index) => {
-            const isCancelled = order.status === 'cancelled';
-            return (
-              <tr key={index} className={isCancelled ? 'order-cancelled-row' : undefined}>
-                <td>#{order.id}</td>
-                <td>
-                  <div>{order.customer_name}</div>
-                  <small style={{ color: '#999' }}>{order.customer_email}</small>
-                </td>
-                <td>{order.product_name}</td>
-                <td>{order.quantity}</td>
-                <td>₹{parseFloat(order.total_amount).toLocaleString()}</td>
-                <td>
-                  <select
-                    className="status-select"
-                    value={order.status}
-                    onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                    disabled={isCancelled}
-                  >
-                    {statusOptions.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </td>
-                <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                <td>
-                  {(order.status === 'pending' || order.status === 'confirmed') && !isCancelled && (
-                    <button
-                      onClick={() => openCancelModal(order.id)}
-                      disabled={cancelLoading === order.id}
-                      style={{
-                        background: '#e94560', color: 'white', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer',
-                        opacity: cancelLoading === order.id ? 0.6 : 1
-                      }}
-                    >
-                      {cancelLoading === order.id ? 'Cancelling...' : 'Cancel'}
-                    </button>
-                  )}
-                  {(order.status === 'shipped' || order.status === 'delivered' || isCancelled) && (
-                    <span style={{ color: '#aaa', fontSize: 12 }}>—</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+          <Loader size={36} />
+        </div>
+      ) : (
+        <table className="order-table">
+          <thead>
+            <tr>
+              <th onClick={() => handleSort('id')} style={{ cursor: 'pointer' }}>ID</th>
+              <th>Customer</th>
+              <th>Product</th>
+              <th onClick={() => handleSort('quantity')} style={{ cursor: 'pointer' }}>Qty</th>
+              <th onClick={() => handleSort('total_amount')} style={{ cursor: 'pointer' }}>Total</th>
+              <th>Status</th>
+              <th onClick={() => handleSort('created_at')} style={{ cursor: 'pointer' }}>Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedOrders.map((order, index) => {
+              const isCancelled = order.status === 'cancelled';
+              return (
+                <tr key={index} className={isCancelled ? 'order-cancelled-row' : undefined}>
+                  <td>#{order.id}</td>
+                  <td>
+                    <div>{order.customer_name}</div>
+                    <small style={{ color: '#999' }}>{order.customer_email}</small>
+                  </td>
+                  <td>{order.product_name}</td>
+                  <td>{order.quantity}</td>
+                  <td>₹{parseFloat(order.total_amount).toLocaleString()}</td>
+                  <td>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <select
+                        className="status-select"
+                        value={order.status}
+                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                        disabled={isCancelled || statusLoading === order.id}
+                        style={{ minWidth: 100 }}
+                      >
+                        {statusOptions.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      {statusLoading === order.id && <Loader size={16} style={{ position: 'absolute', right: -24 }} />}
+                    </div>
+                  </td>
+                  <td>{new Date(order.created_at).toLocaleDateString()}</td>
+                  <td>
+                    {(order.status === 'pending' || order.status === 'confirmed') && !isCancelled && (
+                      <button
+                        onClick={() => openCancelModal(order.id)}
+                        disabled={cancelLoading === order.id}
+                        style={{
+                          background: '#e94560', color: 'white', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer',
+                          opacity: cancelLoading === order.id ? 0.6 : 1
+                        }}
+                      >
+                        {cancelLoading === order.id ? <Loader size={14} color="#fff" style={{ display: 'inline-block', verticalAlign: 'middle' }} /> : 'Cancel'}
+                      </button>
+                    )}
+                    {(order.status === 'shipped' || order.status === 'delivered' || isCancelled) && (
+                      <span style={{ color: '#aaa', fontSize: 12 }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
       {/* Cancel Confirmation Modal */}
       {showCancelModal && (
         <div className="modal-overlay">
